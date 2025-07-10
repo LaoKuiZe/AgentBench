@@ -4,6 +4,7 @@ import random
 import json
 import os
 import yaml
+import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import prompt
@@ -43,14 +44,50 @@ except Exception as e:
 # Load datasets
 try:
     dataset_name = DATASET_CONFIG.get('dataset_name')
+    config_name = DATASET_CONFIG.get('config_name', '')
+    
     print(f"Loading {dataset_name} dataset...")
     
-    # using streaming to avoid downloading the whole dataset
-    dataset = load_dataset(
-        dataset_name, 
-        streaming=DATASET_CONFIG.get('use_streaming', True)
-    )
-    print("Dataset loaded successfully!")
+    # Try to load dataset with config if specified
+    dataset_kwargs = {
+        'streaming': DATASET_CONFIG.get('use_streaming', True)
+    }
+    
+    # Add config_name if specified and not empty
+    if config_name and config_name.strip():
+        dataset_kwargs['name'] = config_name.strip()
+        print(f"Using config: {config_name}")
+    
+    try:
+        # Attempt to load with specified config
+        dataset = load_dataset(dataset_name, **dataset_kwargs)
+        print("Dataset loaded successfully!")
+        
+    except Exception as e:
+        if "Config name is missing" in str(e) or "Please pick one among" in str(e):
+            print(f"❌ Dataset requires config selection. Error: {e}")
+            
+            # Try to get available configs and suggest the first one
+            try:
+                print("🔍 Attempting to auto-detect available configs...")
+                from datasets import get_dataset_config_names
+                available_configs = get_dataset_config_names(dataset_name)
+                print(f"📋 Available configs: {available_configs}")
+                
+                if available_configs:
+                    auto_config = available_configs[0]
+                    print(f"🚀 Auto-selecting first config: {auto_config}")
+                    dataset_kwargs['name'] = auto_config
+                    dataset = load_dataset(dataset_name, **dataset_kwargs)
+                    print(f"✅ Successfully loaded with config: {auto_config}")
+                else:
+                    raise Exception("No available configs found")
+                    
+            except Exception as inner_e:
+                print(f"❌ Failed to auto-detect configs: {inner_e}")
+                raise e
+        else:
+            raise e
     
     # check the dataset splits
     print(f"Dataset splits: {dataset}")
@@ -65,86 +102,95 @@ try:
             try:
                 print(f"Trying to access {split_name} split...")
                 
-                # For streaming datasets, access splits differently
-                if hasattr(dataset, split_name):
-                    data_stream = getattr(dataset, split_name)
+                # For IterableDatasetDict, use dictionary-style access
+                try:
+                    data_stream = dataset[split_name]
                     split_used = split_name
                     print(f"✅ Successfully accessed {split_name} split")
                     break
-                else:
-                    print(f"❌ {split_name} split not found")
+                except (KeyError, TypeError):
+                    print(f"❌ {split_name} split not available")
+                    continue
                     
-            except (KeyError, AttributeError, TypeError) as e:
+            except Exception as e:
                 print(f"❌ Failed to access {split_name} split: {e}")
                 continue
 
-        # If no specific split found, try to use the first available split
+        # If no specific split found, try train directly
         if data_stream is None:
-            print("Trying to access train split directly...")
-            
-            # Try common split names directly
+            print("Trying to access train split as fallback...")
             try:
-                if hasattr(dataset, 'train'):
-                    data_stream = dataset.train
-                    split_used = "train"
-                    print(f"✅ Using train split")
-                else:
-                    print("❌ No train split found")
-                    
+                data_stream = dataset['train']
+                split_used = "train"
+                print(f"✅ Using train split as fallback")
             except Exception as e:
                 print(f"❌ Error accessing train split: {e}")
             
-        # Final fallback: use dataset directly
+        # Final fallback: iterate available splits and use the first one
         if data_stream is None:
-            print("Using dataset directly as fallback...")
-            data_stream = dataset
-            split_used = "direct"
+            print("Using first available split as final fallback...")
+            try:
+                # Get the first available split from the dataset
+                for key in dataset:
+                    try:
+                        data_stream = dataset[key]
+                        split_used = key
+                        print(f"✅ Using first available split: {key}")
+                        break
+                    except Exception as e:
+                        print(f"❌ Failed to use split {key}: {e}")
+                        continue
+            except Exception as e:
+                print(f"❌ Error iterating splits: {e}")
             
     except Exception as e:
         print(f"❌ Error during split access: {e}")
-        data_stream = dataset
-        split_used = "fallback"
-        print(f"Using fallback dataset: {e}")
+        data_stream = None
+        split_used = "error"
     
-    print(f"Final data stream: {type(data_stream)}")
+        print(f"Final data stream: {type(data_stream)}")
     print(f"Split used: {split_used}")
     
-    samples = []
-    
-    max_samples = DATASET_CONFIG.get('max_samples_to_load', 5)
-    print(f"Retrieving {max_samples} samples...")
-    
-    try:
-        for i, sample in enumerate(data_stream):
-            if i >= max_samples:
-                print(f"Reached maximum samples limit ({max_samples})")
-                break
-            
-            print(f"Processing sample {i+1}/{max_samples}...")
-            
-            # Debug: print sample type and basic info
-            if PIPELINE_CONFIG.get('verbose_logging', True):
-                print(f"  Sample type: {type(sample)}")
-                if hasattr(sample, 'keys'):
-                    print(f"  Sample keys: {list(sample.keys())[:5]}...")  # Show first 5 keys
-                elif isinstance(sample, str):
-                    print(f"  Sample length: {len(sample)} characters")
-            
-            samples.append(sample)
-            print(f"✅ Retrieved sample {i+1}/{max_samples}")
-            
-        print(f"Total samples retrieved: {len(samples)}")
-        
-    except Exception as e:
-        print(f"Error during sample retrieval: {e}")
-        print(f"Retrieved {len(samples)} samples before error")
-        import traceback
-        traceback.print_exc()
-    
-    if len(samples) == 0:
-        print("❌ No samples retrieved from dataset!")
+    # Check if we have a valid data stream
+    if data_stream is None:
+        print("❌ No valid data stream found! Cannot proceed.")
+        samples = []
     else:
-        print(f"✅ Successfully retrieved {len(samples)} samples")
+        samples = []
+        max_samples = DATASET_CONFIG.get('max_samples_to_load', 5)
+        print(f"Retrieving {max_samples} samples...")
+        
+        try:
+            for i, sample in enumerate(data_stream):
+                if i >= max_samples:
+                    print(f"Reached maximum samples limit ({max_samples})")
+                    break
+                
+                print(f"Processing sample {i+1}/{max_samples}...")
+                
+                # Debug: print sample type and basic info
+                if PIPELINE_CONFIG.get('verbose_logging', True):
+                    print(f"  Sample type: {type(sample)}")
+                    if hasattr(sample, 'keys'):
+                        print(f"  Sample keys: {list(sample.keys())[:5]}...")  # Show first 5 keys
+                    elif isinstance(sample, str):
+                        print(f"  Sample length: {len(sample)} characters")
+                
+                samples.append(sample)
+                print(f"✅ Retrieved sample {i+1}/{max_samples}")
+                
+            print(f"Total samples retrieved: {len(samples)}")
+            
+        except Exception as e:
+            print(f"Error during sample retrieval: {e}")
+            print(f"Retrieved {len(samples)} samples before error")
+            import traceback
+            traceback.print_exc()
+        
+        if len(samples) == 0:
+            print("❌ No samples retrieved from dataset!")
+        else:
+            print(f"✅ Successfully retrieved {len(samples)} samples")
 
     
 except Exception as e:
@@ -167,6 +213,11 @@ class ValidationGenerator:
         self.config = config if config is not None else globals()['config']
         self.selected_tasks = []
         self.generated_scripts = {}
+        # Rate limiting settings from config
+        rate_config = self.config.get('rate_limiting', {})
+        self.request_delay = rate_config.get('request_delay', 2.0)
+        self.max_retries = rate_config.get('max_retries', 3)
+        self.retry_delay = rate_config.get('retry_delay', 5.0)
         
     def analyze_tasks(self, samples: List[Dict]) -> List[Dict]:
         """Analyze and select representative tasks from dataset (universal approach)"""
@@ -200,6 +251,47 @@ class ValidationGenerator:
         print(f"Selected {len(selected)} representative tasks using universal sampling")
         return selected
     
+    def _make_api_request_with_retry(self, messages: List[Dict], max_tokens: int = None, temperature: float = None):
+        """Make API request with retry mechanism and rate limiting"""
+        for attempt in range(self.max_retries):
+            try:
+                # Add delay before each request (except first attempt of first call)
+                if attempt > 0:
+                    print(f"🔄 Retry attempt {attempt + 1}/{self.max_retries} in {self.retry_delay}s...")
+                    time.sleep(self.retry_delay)
+                else:
+                    # Always add base delay for rate limiting
+                    print(f"⏳ Adding {self.request_delay}s delay for rate limiting...")
+                    time.sleep(self.request_delay)
+                
+                response = self.client.chat.completions.create(
+                    model=OPENAI_CONFIG.get('model', 'gpt-4o'),
+                    messages=messages,
+                    max_tokens=max_tokens or OPENAI_CONFIG.get('max_tokens', 4000),
+                    temperature=temperature or OPENAI_CONFIG.get('temperature', 0.3),
+                    n=1
+                )
+                
+                return utils.validate_openai_response(response)
+                
+            except Exception as e:
+                error_msg = str(e)
+                print(f"❌ API request failed (attempt {attempt + 1}/{self.max_retries}): {error_msg}")
+                
+                # Check if it's a rate limit error
+                if "429" in error_msg or "rate" in error_msg.lower():
+                    if attempt < self.max_retries - 1:
+                        wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"⏰ Rate limit detected, waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                        continue
+                
+                # If it's the last attempt or non-retryable error, re-raise
+                if attempt == self.max_retries - 1:
+                    raise e
+                    
+        return None
+    
     def generate_validation_script(self, task_sample: Dict) -> Optional[str]:
         """Use GPT to generate validation script for a specific task"""
         
@@ -221,24 +313,25 @@ class ValidationGenerator:
         )
         
         try:
-            response = self.client.chat.completions.create(
-                model=OPENAI_CONFIG.get('model', 'gpt-4o'),
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "You are an expert Python developer specializing in data validation and analysis. Generate clean, well-documented, and robust code that can intelligently analyze dataset samples and create meaningful validation logic. CRITICAL: The script must include a complete working example with the actual dataset sample and show validation results. IMPORTANT: Return ONLY executable Python code without any Markdown formatting, explanatory text, or code block markers. Start directly with imports or class definitions."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt_text
-                    }
-                ],
+            messages = [
+                {
+                    "role": "system", 
+                    "content": "You are an expert Python developer specializing in data validation and analysis. Generate clean, well-documented, and robust code that can intelligently analyze dataset samples and create meaningful validation logic. CRITICAL: The script must include a complete working example with the actual dataset sample and show validation results. IMPORTANT: Return ONLY executable Python code without any Markdown formatting, explanatory text, or code block markers. Start directly with imports or class definitions."
+                },
+                {
+                    "role": "user",
+                    "content": prompt_text
+                }
+            ]
+            
+            raw_script = self._make_api_request_with_retry(
+                messages=messages,
                 max_tokens=OPENAI_CONFIG.get('max_tokens', 4000),
-                temperature=OPENAI_CONFIG.get('temperature', 0.3),
-                n = 1
+                temperature=OPENAI_CONFIG.get('temperature', 0.3)
             )
             
-            raw_script = utils.validate_openai_response(response)
+            if raw_script is None:
+                return None
             
             # Clean any potential Markdown formatting
             cleaned_script = utils.clean_markdown_script(raw_script)
@@ -272,23 +365,27 @@ class ValidationGenerator:
             debug_prompt_text = prompt.get_debug_prompt(current_script, error_message)
             
             try:
-                response = self.client.chat.completions.create(
-                    model=OPENAI_CONFIG.get('model', 'gpt-4o'),
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert Python debugger specializing in validation scripts. Fix the error while preserving the original functionality and dataset analysis capabilities. Return ONLY executable Python code without Markdown formatting."
-                        },
-                        {
-                            "role": "user", 
-                            "content": debug_prompt_text
-                        }
-                    ],
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "You are an expert Python debugger specializing in validation scripts. Fix the error while preserving the original functionality and dataset analysis capabilities. Return ONLY executable Python code without Markdown formatting."
+                    },
+                    {
+                        "role": "user", 
+                        "content": debug_prompt_text
+                    }
+                ]
+                
+                raw_script = self._make_api_request_with_retry(
+                    messages=messages,
                     max_tokens=OPENAI_CONFIG.get('max_tokens', 4000),
                     temperature=DEBUG_CONFIG.get('debug_temperature', 0.1)
                 )
                 
-                raw_script = utils.validate_openai_response(response)
+                if raw_script is None:
+                    print(f"Failed to get response during debugging iteration {iteration + 1}")
+                    break
+                
                 current_script = utils.clean_markdown_script(raw_script)
                 print("Script updated based on error feedback")
                 
@@ -307,23 +404,27 @@ class ValidationGenerator:
         reflection_prompt_text = prompt.get_reflection_prompt(script_code)
         
         try:
-            response = self.client.chat.completions.create(
-                model=OPENAI_CONFIG.get('model', 'gpt-4o'),
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a senior validation script expert specializing in dataset analysis and validation. Focus on improving the script's ability to intelligently analyze dataset samples and create meaningful validation logic. Return ONLY executable Python code without Markdown formatting."
-                    },
-                    {
-                        "role": "user",
-                        "content": reflection_prompt_text
-                    }
-                ],
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a senior validation script expert specializing in dataset analysis and validation. Focus on improving the script's ability to intelligently analyze dataset samples and create meaningful validation logic. Return ONLY executable Python code without Markdown formatting."
+                },
+                {
+                    "role": "user",
+                    "content": reflection_prompt_text
+                }
+            ]
+            
+            raw_script = self._make_api_request_with_retry(
+                messages=messages,
                 max_tokens=OPENAI_CONFIG.get('max_tokens', 4000),
                 temperature=DEBUG_CONFIG.get('debug_temperature', 0.1)
             )
             
-            raw_script = utils.validate_openai_response(response)
+            if raw_script is None:
+                print("Failed to get response during reflection")
+                return script_code
+            
             return utils.clean_markdown_script(raw_script)
             
         except Exception as e:

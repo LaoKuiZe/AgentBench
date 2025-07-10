@@ -3,13 +3,13 @@
 # Dataset Configuration
 dataset:
   # Which dataset to use
-  dataset_name: "tasksource/planbench"
-  # dataset_name: "squad"  # 使用更小的Squad数据集进行测试
-  # dataset_name: "osunlp/Mind2Web"
+  # dataset_name: "tasksource/planbench"
+  # dataset_name: "squad"  # use smaller Squad dataset for testing
+  dataset_name: "osunlp/Mind2Web"
   # dataset_name: "MMInstruction/OSWorld-G"
   
   # Dataset configuration name (optional, auto-detect if not specified)
-  config_name: "task_1_plan_generation"  # 或者留空 "" 来自动检测
+  config_name: ""  # or "" for auto-detection
   
   # Use streaming to avoid downloading entire dataset
   use_streaming: true
