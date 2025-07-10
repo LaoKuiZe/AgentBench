@@ -3,30 +3,30 @@
 # Dataset Configuration
 dataset:
   # Which dataset to use
-  dataset_name: "osunlp/Mind2Web"
+  dataset_name: "tasksource/planbench"
+  # dataset_name: "squad"  # 使用更小的Squad数据集进行测试
+  # dataset_name: "osunlp/Mind2Web"
   # dataset_name: "MMInstruction/OSWorld-G"
-  # dataset_name: "tasksource/planbench"
-  # dataset_name: "princeton-nlp/SWE-bench_Verified"
   
-  # Whether to use streaming to avoid downloading entire dataset
+  # Dataset configuration name (optional, auto-detect if not specified)
+  config_name: "task_1_plan_generation"  # 或者留空 "" 来自动检测
+  
+  # Use streaming to avoid downloading entire dataset
   use_streaming: true
   
   # Preferred data split priority (will try in order)
-  split_priority: 
-    - "test"
-    - "train" 
-    - "validation"
+  split_priority: ['validation', 'train', 'test']  # validation split更小
   
   # Number of samples to load from dataset for analysis
-  max_samples_to_load: 10
+  max_samples_to_load: 5
   
   # Number of validation scripts to generate (max representative tasks)
-  max_scripts_to_generate: 5
+  max_scripts_to_generate: 3
 
 # OpenAI API Configuration
 openai:
   # API credentials and settings
-  api_key: "sk-OBJjbt5QYrQh8X6aA3421f234dE34477BaB2Cb583bD116C0"
+  api_key: ""
   base_url: "https://api.sttai.cc/v1"
   model: "gpt-4o"
   max_tokens: 4000
