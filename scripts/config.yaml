@@ -1,0 +1,52 @@
+# Mind2Web Validation Script Generator Configuration
+
+# Dataset Configuration
+dataset:
+  # Which dataset to use
+  dataset_name: "osunlp/Mind2Web"
+  # dataset_name: "MMInstruction/OSWorld-G"
+  # dataset_name: "tasksource/planbench"
+  # dataset_name: "princeton-nlp/SWE-bench_Verified"
+  
+  # Whether to use streaming to avoid downloading entire dataset
+  use_streaming: true
+  
+  # Preferred data split priority (will try in order)
+  split_priority: 
+    - "test"
+    - "train" 
+    - "validation"
+  
+  # Number of samples to load from dataset for analysis
+  max_samples_to_load: 10
+  
+  # Number of validation scripts to generate (max representative tasks)
+  max_scripts_to_generate: 5
+
+# OpenAI API Configuration
+openai:
+  # API credentials and settings
+  api_key: "sk-OBJjbt5QYrQh8X6aA3421f234dE34477BaB2Cb583bD116C0"
+  base_url: "https://api.sttai.cc/v1"
+  model: "gpt-4o"
+  max_tokens: 4000
+  temperature: 0.3
+
+# Self-Debug Configuration
+debug:
+  # Maximum iterations for system feedback debugging
+  max_system_feedback_iterations: 3
+  
+  # Temperature for debugging iterations
+  debug_temperature: 0.1
+
+# Generation Pipeline Configuration
+pipeline:
+  # Whether to save generated scripts to files
+  save_scripts_to_files: true
+  
+  # Directory to save generated scripts (relative to current working directory)
+  output_directory: "./validation_scripts"
+  
+  # Whether to print detailed progress information
+  verbose_logging: true 
