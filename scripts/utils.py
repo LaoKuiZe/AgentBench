@@ -219,23 +219,9 @@ def check_api_status(client, api_key: str, base_url: str) -> bool:
         error_msg = str(e)
         print(f"❌ API check failed: {error_msg}")
         
-        if "429" in error_msg:
-            print("⚠️  Possible causes:")
-            print("   - API quota exceeded")
-            print("   - Rate limit reached")
-            print("   - Need to wait before making more requests")
-        elif "401" in error_msg:
+        if "401" in error_msg:
             print("⚠️  Authentication failed - check API key")
         elif "403" in error_msg:
             print("⚠️  Access forbidden - check permissions")
         
         return False
-
-def suggest_solutions_for_429():
-    """
-    Suggest solutions for 429 errors
-    """
-    print("\nSolutions for 429 errors:")
-    print("1. Check API quota/billing status")
-    print("2. Wait 10-15 minutes before retrying")
-    print("3. Increase delay between requests")

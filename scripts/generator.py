@@ -6,7 +6,8 @@ import os
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-import prompt
+import prompt as standard_prompt
+import simple_prompt
 import utils
 import time
 
@@ -22,7 +23,6 @@ try:
     DEBUG_CONFIG = config.get('debug', {})
     PIPELINE_CONFIG = config.get('pipeline', {})
     NETWORK_CONFIG = config.get('network', {})
-    RATE_LIMITING_CONFIG = config.get('rate_limiting', {})
     
     # Print configuration if verbose logging is enabled
     if PIPELINE_CONFIG.get('verbose_logging', True):
@@ -214,7 +214,7 @@ except Exception as e:
     print(f"Error loading dataset: {e}")
     samples = []
 
-# OpenAI API configuration
+# OpenAI client configuration
 client = OpenAI(
     api_key=OPENAI_CONFIG.get('api_key'),
     base_url=OPENAI_CONFIG.get('base_url', 'https://api.openai.com/v1')
@@ -230,52 +230,7 @@ class ValidationGenerator:
         self.config = config if config is not None else globals()['config']
         self.selected_tasks = []
         self.generated_scripts = {}
-        # Rate limiting settings from config
-        self.request_delay = RATE_LIMITING_CONFIG.get('request_delay', 2.0)
-        self.max_retries = RATE_LIMITING_CONFIG.get('max_retries', 3)
-        self.retry_delay = RATE_LIMITING_CONFIG.get('retry_delay', 5.0)
     
-    def _make_api_request_with_retry(self, messages: List[Dict], max_tokens: int = None, temperature: float = None):
-        """Make API request with retry mechanism and rate limiting"""
-        for attempt in range(self.max_retries):
-            try:
-                # Add delay before each request (except first attempt of first call)
-                if attempt > 0:
-                    print(f"Retry attempt {attempt + 1}/{self.max_retries} in {self.retry_delay}s...")
-                    time.sleep(self.retry_delay)
-                else:
-                    # Always add base delay for rate limiting
-                    print(f"Adding {self.request_delay}s delay for rate limiting...")
-                    time.sleep(self.request_delay)
-                
-                response = self.client.chat.completions.create(
-                    model=OPENAI_CONFIG.get('model', 'gpt-4o'),
-                    messages=messages,
-                    max_tokens=max_tokens or OPENAI_CONFIG.get('max_tokens', 4000),
-                    temperature=temperature or OPENAI_CONFIG.get('temperature', 0.3),
-                    n=1
-                )
-                
-                return utils.validate_openai_response(response)
-                
-            except Exception as e:
-                error_msg = str(e)
-                print(f"❌ API request failed (attempt {attempt + 1}/{self.max_retries}): {error_msg}")
-                
-                # Check if it's a rate limit error
-                if "429" in error_msg or "rate" in error_msg.lower():
-                    if attempt < self.max_retries - 1:
-                        wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"Rate limit detected, waiting {wait_time}s before retry...")
-                        time.sleep(wait_time)
-                        continue
-                
-                # If it's the last attempt or non-retryable error, re-raise
-                if attempt == self.max_retries - 1:
-                    raise e
-                    
-        return None
-        
     def analyze_tasks(self, samples: List[Dict]) -> List[Dict]:
         """Analyze and select representative tasks from dataset (universal approach)"""
         print("Analyzing tasks and selecting representative samples...")
@@ -312,7 +267,7 @@ class ValidationGenerator:
         """Use GPT to generate validation script for a specific task"""
         
         # Convert sample to string for LLM analysis
-        dataset_sample_str = json.dumps(task_sample, indent=2, ensure_ascii=False)
+        dataset_sample_str = json.dumps(truncated_sample, indent=2, ensure_ascii=False)
         
         # Get basic sample summary for logging
         sample_summary = utils.get_sample_summary(task_sample)
@@ -329,10 +284,6 @@ class ValidationGenerator:
         )
         
         try:
-            # Add delay before API call
-            print(f"Adding {self.request_delay}s delay before API call...")
-            time.sleep(self.request_delay)
-            
             messages = [
                 {
                     "role": "system", 
@@ -344,11 +295,13 @@ class ValidationGenerator:
                 }
             ]
             
-            raw_script = self._make_api_request_with_retry(
+            raw_script = self.client.chat.completions.create(
+                model=OPENAI_CONFIG.get('model', 'gpt-4'),
                 messages=messages,
                 max_tokens=OPENAI_CONFIG.get('max_tokens', 4000),
-                temperature=OPENAI_CONFIG.get('temperature', 0.3)
-            )
+                temperature=OPENAI_CONFIG.get('temperature', 0.3),
+                n=1
+            ).choices[0].message.content
             
             if raw_script is None:
                 print("❌ Failed to get response from API")
@@ -386,10 +339,6 @@ class ValidationGenerator:
             debug_prompt_text = prompt.get_debug_prompt(current_script, error_message)
             
             try:
-                # Add delay before API call
-                print(f"⏳ Debug API call - Adding {self.request_delay}s delay...")
-                time.sleep(self.request_delay)
-                
                 messages = [
                     {
                         "role": "system",
@@ -401,11 +350,13 @@ class ValidationGenerator:
                     }
                 ]
                 
-                raw_script = self._make_api_request_with_retry(
+                raw_script = self.client.chat.completions.create(
+                    model=OPENAI_CONFIG.get('model', 'gpt-4'),
                     messages=messages,
                     max_tokens=OPENAI_CONFIG.get('max_tokens', 4000),
-                    temperature=DEBUG_CONFIG.get('debug_temperature', 0.1)
-                )
+                    temperature=DEBUG_CONFIG.get('debug_temperature', 0.1),
+                    n=1
+                ).choices[0].message.content
                 
                 if raw_script is None:
                     print(f"❌ Failed to get response during debugging iteration {iteration + 1}")
@@ -429,10 +380,6 @@ class ValidationGenerator:
         reflection_prompt_text = prompt.get_reflection_prompt(script_code)
         
         try:
-            # Add delay before API call
-            print(f"Reflection API call - Adding {self.request_delay}s delay...")
-            time.sleep(self.request_delay)
-            
             messages = [
                 {
                     "role": "system",
@@ -444,11 +391,13 @@ class ValidationGenerator:
                 }
             ]
             
-            raw_script = self._make_api_request_with_retry(
+            raw_script = self.client.chat.completions.create(
+                model=OPENAI_CONFIG.get('model', 'gpt-4'),
                 messages=messages,
                 max_tokens=OPENAI_CONFIG.get('max_tokens', 4000),
-                temperature=DEBUG_CONFIG.get('debug_temperature', 0.1)
-            )
+                temperature=DEBUG_CONFIG.get('debug_temperature', 0.1),
+                n=1
+            ).choices[0].message.content
             
             if raw_script is None:
                 print("❌ Failed to get response during reflection")
@@ -533,16 +482,17 @@ if __name__ == "__main__":
     print("Universal dataset validation script generation")
     print("="*50)
     
-    # Check API status before proceeding
-    api_status = utils.check_api_status(
-        client, 
-        OPENAI_CONFIG.get('api_key', ''), 
-        OPENAI_CONFIG.get('base_url', '')
-    )
-    
-    if not api_status:
-        print("❌ API is not accessible. Please check your configuration.")
-        utils.suggest_solutions_for_429()
+    # Check API status before proceeding (using new OpenAI client)
+    print("🔍 Checking API status...")
+    try:
+        test_response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "test"}],
+            max_tokens=5
+        )
+        print("✅ API is accessible")
+    except Exception as e:
+        print(f"❌ API check failed: {e}")
         exit(1)
     
     # Initialize the validation generator
