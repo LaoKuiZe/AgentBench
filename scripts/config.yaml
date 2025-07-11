@@ -1,11 +1,20 @@
 # Mind2Web Validation Script Generator Configuration
 
+# Network Configuration
+network:
+  # Hugging Face Hub mirror for users in China or with network issues
+  hf_mirror: "https://hf-mirror.com"
+  # Connection timeout in seconds
+  timeout: 30
+  # Maximum retries for dataset loading
+  max_retries: 3
+
 # Dataset Configuration
 dataset:
   # Which dataset to use
   # dataset_name: "tasksource/planbench"
-  # dataset_name: "squad"  # use smaller Squad dataset for testing
-  dataset_name: "osunlp/Mind2Web"
+  dataset_name: "squad"  # use smaller Squad dataset for testing
+  # dataset_name: "osunlp/Mind2Web"
   # dataset_name: "MMInstruction/OSWorld-G"
   
   # Dataset configuration name (optional, auto-detect if not specified)
@@ -39,6 +48,17 @@ debug:
   
   # Temperature for debugging iterations
   debug_temperature: 0.1
+
+# Rate Limiting Configuration
+rate_limiting:
+  # Delay between API requests (seconds) - increased to avoid quota limits
+  request_delay: 5.0
+  
+  # Maximum number of retries for failed requests
+  max_retries: 5
+  
+  # Base delay between retries (seconds) - increased for quota issues
+  retry_delay: 15.0
 
 # Generation Pipeline Configuration
 pipeline:
