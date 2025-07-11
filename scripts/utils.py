@@ -188,14 +188,14 @@ def print_generation_summary(results: Dict) -> None:
     for task_id, data in results.items():
         sample_info = data.get('sample_info', {})
         
-        print(f"\n📋 {task_id.upper()}:")
+        print(f"\n{task_id.upper()}:")
         print(f"   Sample Keys: {sample_info.get('sample_keys', 'Unknown')}")
         print(f"   Sample Size: {sample_info.get('sample_size', 'Unknown')} fields")
         print(f"   Script Length: {len(data['script'])} characters")
         print(f"   File: validation_script_{task_id}.py")
     
-    print(f"\n✅ Successfully generated {len(results)} validation scripts")
-    print("📁 All scripts saved to current directory")
+    print(f"\nSuccessfully generated {len(results)} validation scripts")
+    print("All scripts saved to current directory")
 
 
 def check_api_status(client, api_key: str, base_url: str) -> bool:
@@ -212,16 +212,16 @@ def check_api_status(client, api_key: str, base_url: str) -> bool:
             max_tokens=5
         )
         
-        print("✅ API is accessible")
+        print("API is accessible")
         return True
         
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ API check failed: {error_msg}")
+        print(f"API check failed: {error_msg}")
         
         if "401" in error_msg:
-            print("⚠️  Authentication failed - check API key")
+            print("Authentication failed - check API key")
         elif "403" in error_msg:
-            print("⚠️  Access forbidden - check permissions")
+            print("Access forbidden - check permissions")
         
         return False
