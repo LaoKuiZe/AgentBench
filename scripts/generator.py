@@ -86,10 +86,10 @@ try:
             
             # Try to get available configs and suggest the first one
             try:
-                print("🔍 Attempting to auto-detect available configs...")
+                print("Attempting to auto-detect available configs...")
                 from datasets import get_dataset_config_names
                 available_configs = get_dataset_config_names(dataset_name)
-                print(f"📋 Available configs: {available_configs}")
+                print(f"Available configs: {available_configs}")
                 
                 if available_configs:
                     auto_config = available_configs[0]
@@ -241,11 +241,11 @@ class ValidationGenerator:
             try:
                 # Add delay before each request (except first attempt of first call)
                 if attempt > 0:
-                    print(f"🔄 Retry attempt {attempt + 1}/{self.max_retries} in {self.retry_delay}s...")
+                    print(f"Retry attempt {attempt + 1}/{self.max_retries} in {self.retry_delay}s...")
                     time.sleep(self.retry_delay)
                 else:
                     # Always add base delay for rate limiting
-                    print(f"⏳ Adding {self.request_delay}s delay for rate limiting...")
+                    print(f"Adding {self.request_delay}s delay for rate limiting...")
                     time.sleep(self.request_delay)
                 
                 response = self.client.chat.completions.create(
